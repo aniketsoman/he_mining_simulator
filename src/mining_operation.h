@@ -73,8 +73,6 @@ private:
 class TruckSelector {
 public:
     TruckSelector() = default;
-    // We rely on std::future (TaskStatus) destructor to block for async calls to
-    // finish when availableTrucks queue is being destroyed.
     ~TruckSelector() = default; 
    
     void addTruck(uint truckId, UnloadSiteSelectorPtr ulSiteSelector);
@@ -87,6 +85,9 @@ public:
 
 private:
     std::vector<TruckPtr> trucks;
+    // We rely on std::future (TruckStatus) destructor to block for std::async calls 
+    // to finish when availableTrucks is being destroyed, therefore we don't 
+    // wait for TruckStatus to be ready in destructor.
     threadsafe_queue<TruckStatus> availableTrucks;
 };
 
@@ -123,6 +124,9 @@ public:
 
 private:
     // Save futures so we wait until the unifinished work is done
+    // We rely on std::future (TruckStatus) destructor to block for std::async calls 
+    // to finish when ongoingMiningOps is being destroyed, therefore we don't wait
+    // for TruckStatus to be ready in stop() or destructor.
     std::unordered_map<uint, TruckStatus> ongoingMiningOps;
    
     std::atomic<bool> bRun;
