@@ -6,9 +6,9 @@
 #include "simulator.h"
 #include "mining_operation.h"
 
-Simulator::Simulator(size_t trucks, size_t unloadSites, size_t speed, size_t time) 
+Simulator::Simulator(uint trucks, uint unloadSites, uint speed, uint time) 
         : _numTrucks(trucks), _numUnloadSites(unloadSites), 
-        _simulationSpeed(speed), _simulationTime(time) {
+        simultnSpeed(speed), simultnTime(time) {
     if (_numTrucks == 0 || _numUnloadSites == 0) {
         throw std::invalid_argument(\
             "Number of trucks and unload sites must be greater than zero.");
@@ -19,18 +19,18 @@ void Simulator::run() {
     std::cout << "Starting simulation with the following parameters:\n";
     std::cout << "Number of Trucks: " << _numTrucks << "\n";
     std::cout << "Number of Unload Sites: " << _numUnloadSites << "\n";
-    std::cout << "Simulation Time (hours): " << _simulationTime << "\n";
-    std::cout << "Simulation Speed: " << _simulationSpeed << "\n";
+    std::cout << "Simulation Time (hours): " << simultnTime << "\n";
+    std::cout << "Simulation Speed: " << simultnSpeed << "\n";
 
     // Simulation loop would go here
     MiningOperation mOp(_numTrucks, _numUnloadSites);
     std::cout << "Starting Simulation...\n";
-    mOp.start(_simulationSpeed);
+    mOp.start(simultnSpeed);
     std::cout << "Simulation started.\n";
     while (true) {
-       // sleep for _simulationTime / _simulationSpeed time
-        std::this_thread::sleep_for(std::chrono::minutes(_simulationTime * MINUTES_IN_HOUR 
-                                                        / _simulationSpeed));
+       // sleep for simultnTime / simultnSpeed time
+        std::this_thread::sleep_for(std::chrono::minutes(simultnTime * MINUTES_IN_HOUR 
+                                                        / simultnSpeed));
         std::cout << "Stopping simulation...\n";
         mOp.stop(); // Should block until mining operation wraps up current tasks & cleans up
         break;
@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
      // Ideally we should use a command-line parsing library rather than reinventing it, 
     // but to avoid extra dependencies, here is a simple implementation.
     const auto argParser = [&printUsage, &errorExit](int argc, char** argv) {
-        std::unordered_map<std::string, size_t> args;
+        std::unordered_map<std::string, uint> args;
         // List & mapping of valid arguments
         std::unordered_map<std::string, std::string> validArgs = {
             {"-t", "numTrucks"}, {"-trucks", "numTrucks"},
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
                 errorExit("Error: Missing value for argument " + arg);
             }
 
-            size_t val = 0;
+            uint val = 0;
             try {
                 val = std::stoul(argv[i]);
             } catch (const std::invalid_argument& e) {

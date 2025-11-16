@@ -1,0 +1,41 @@
+# Review before submitting
+
+# Build artifacts
+*.o
+*.obj
+*.lo
+*.slo
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.exe
+*.out
+*.app
+he_mining_simulator
+
+# CMake build directories and files
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+_CPack_Packages/
+.cmake/
+Testing/
+
+# make build directory
+mkbuild/
+
+# Visual Studio code files
+.vscode/
+
+# profiler (instruments) files
+instruments*/
+
+
+
+
+

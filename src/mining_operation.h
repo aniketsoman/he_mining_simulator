@@ -4,75 +4,130 @@
 #include <queue>
 #include <unordered_map>
 #include <future>
+#include <thread>
+#include <shared_mutex>
 #include <memory>
 
 #include "common.h"
 #include "threadsafe_queue.h"
 
+class UnloadSiteSelector;
+class TruckSelector;
+class Truck;
+class UnloadSite;
+using TruckStatus = std::future<uint>;
+using UnloadSiteSelectorPtr = std::shared_ptr<UnloadSiteSelector>;
+using TruckSelectorPtr = std::shared_ptr<TruckSelector>;
+using TruckPtr = std::shared_ptr<Truck>;
+using UnloadSitePtr = std::shared_ptr<UnloadSite>;
+using SiteQueueSzPair = std::pair<uint, uint>;
+
 class Truck {
 public:
-    Truck(size_t id) : _id(id) {}
+    Truck(uint id, UnloadSiteSelectorPtr ulSiteSelector) 
+            : trkId(id), siteSelector(ulSiteSelector) {}
     ~Truck() = default;
 
-    size_t id() const {
-        return _id;
+    uint id() const {
+        return trkId;
     }
+
+    TruckStatus mineLoadTravel(uint speed);
+    void unload(uint speed);
+    TruckStatus travelBack(uint speed);
+
 private:
-    size_t _id;
+    uint trkId;
+    UnloadSiteSelectorPtr siteSelector;
 };
 
 class UnloadSite {
 public:
-    UnloadSite(size_t id) : _id(id), _bRun(false) {}
-    ~UnloadSite() = default;
+    UnloadSite(uint id, TruckSelectorPtr truckSelector) 
+        : siteId(id), bRun(false), truckSelector(truckSelector) {}
+    ~UnloadSite();
 
-    size_t id() const {
-        return _id;
+    uint id() const {
+        return siteId;
     }
 
     size_t getQueueSize() const {
-        return _waitingTrucks.size();
+        return waitingTrucks.size();
     }
 
-    void addTruck(size_t truckId) {
-        _waitingTrucks.push(truckId);
+    void addTruck(uint truckId) {
+       waitingTrucks.push(truckId);
     }
 
-    std::shared_ptr<std::future<size_t>> popEmptyTruck() {
-        return _emptyTrucks.try_pop();
-    }
-
-    void start(size_t speed);
+    void start(uint speed);
     void stop();
 
 private:
-    size_t _id;
-    threadsafe_queue<size_t> _waitingTrucks;
-    threadsafe_queue<std::future<size_t>> _emptyTrucks;
-    std::atomic<bool> _bRun;
-    std::thread _ulSiteThread;
+    uint siteId;
+    threadsafe_queue<uint>waitingTrucks;
+    std::atomic<bool> bRun;
+    std::thread ulSiteThread;
+    TruckSelectorPtr truckSelector;
+};
+
+class TruckSelector {
+public:
+    TruckSelector() = default;
+    // We rely on std::future (TaskStatus) destructor to block for async calls to
+    // finish when availableTrucks queue is being destroyed.
+    ~TruckSelector() = default; 
+   
+    void addTruck(uint truckId, UnloadSiteSelectorPtr ulSiteSelector);
+    TruckPtr getTruck(uint truckId);
+    size_t numTrucks() {return trucks.size();}
+
+    void truckAvailableNow(uint truckId);
+    void truckAvailable(TruckStatus&& status);
+    TruckPtr getAvailableTruck();
+
+private:
+    std::vector<TruckPtr> trucks;
+    threadsafe_queue<TruckStatus> availableTrucks;
+};
+
+class UnloadSiteSelector {
+public:
+    UnloadSiteSelector() = default;
+    ~UnloadSiteSelector() = default;
+
+    void addUnloadSite(uint siteId, TruckSelectorPtr truckSelector);
+    void startSites(uint speed);
+    void stopSites();
+
+    // Priority Queue operations
+    void pushUnloadSite(uint siteId, uint qSize);
+    UnloadSitePtr topUnloadSite();
+    UnloadSitePtr popTopUnloadSite();
+    size_t numUnloadSites() {return unloadSites.size();}
+
+private:
+    std::vector<UnloadSitePtr> unloadSites;
+    // Min heap of pair<queue size, unload site id> so we don't need custom comparator
+    // std::greater will suffice sorting on queue size 
+    std::priority_queue<SiteQueueSzPair, std::vector<SiteQueueSzPair>, 
+                        std::greater<SiteQueueSzPair> > pqUnloadSites;
+    mutable std::shared_mutex pqMutex;
 };
 
 class MiningOperation {
 public:
-    MiningOperation(size_t numTrucks, size_t numUnloadSites);
-    ~MiningOperation() = default;
-    void start(size_t speed);
+    MiningOperation(uint numTrucks, uint numUnloadSites);
+    ~MiningOperation();
+    void start(uint speed);
     void stop(); 
 
 private:
-    std::vector<Truck> _trucks;
-    std::vector<std::shared_ptr<UnloadSite>> _unloadSites;
     // Save futures so we wait until the unifinished work is done
-    std::unordered_map<size_t, std::future<size_t>> _ongoingMiningOps;
-    // Min heap of pair<queue size, unload site id> so we don't need custom comparator
-    // std::greater will suffice
-    std::priority_queue<std::pair<size_t, size_t>, std::vector<std::pair<size_t, size_t>>, 
-                        std::greater<std::pair<size_t, size_t>>> _unload_site_availability;
-    
-    std::atomic<bool> _bRun;
-    std::thread _operationThread;
-    threadsafe_queue<size_t> _availableTrucks;
+    std::unordered_map<uint, TruckStatus> ongoingMiningOps;
+   
+    std::atomic<bool> bRun;
+    std::thread operationThread;
 
-    std::future<size_t> mineAndDispatch(size_t truckId, size_t speed); // Simulate mining + dispatching to unload site
+    UnloadSiteSelectorPtr unloadSiteSelector;
+    TruckSelectorPtr truckSelector;
 };
