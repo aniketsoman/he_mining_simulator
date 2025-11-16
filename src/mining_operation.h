@@ -26,7 +26,6 @@ class Truck {
 public:
     Truck(uint id, UnloadSiteSelectorPtr ulSiteSelector) 
             : trkId(id), siteSelector(ulSiteSelector) {}
-    ~Truck() = default;
 
     uint id() const {
         return trkId;
