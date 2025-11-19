@@ -72,21 +72,19 @@ private:
 class TruckSelector {
 public:
     TruckSelector() = default;
-    ~TruckSelector() = default; 
+    ~TruckSelector(); 
    
     void addTruck(uint truckId, UnloadSiteSelectorPtr ulSiteSelector);
     TruckPtr getTruck(uint truckId);
     size_t numTrucks() {return trucks.size();}
 
+    size_t noTruckAvailable() {return availableTrucks.empty();}
     void truckAvailableNow(uint truckId);
     void truckAvailable(TruckStatus&& status);
     TruckPtr getAvailableTruck();
 
 private:
     std::vector<TruckPtr> trucks;
-    // We rely on std::future (TruckStatus) destructor to block for std::async calls 
-    // to finish when availableTrucks is being destroyed, therefore we don't 
-    // wait for TruckStatus to be ready in destructor.
     threadsafe_queue<TruckStatus> availableTrucks;
 };
 
@@ -123,9 +121,6 @@ public:
 
 private:
     // Save futures so we wait until the unifinished work is done
-    // We rely on std::future (TruckStatus) destructor to block for std::async calls 
-    // to finish when ongoingMiningOps is being destroyed, therefore we don't wait
-    // for TruckStatus to be ready in stop() or destructor.
     std::unordered_map<uint, TruckStatus> ongoingMiningOps;
    
     std::atomic<bool> bRun;

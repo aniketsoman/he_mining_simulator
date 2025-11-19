@@ -20,6 +20,14 @@ MiningOperation::MiningOperation(uint numTrucks, uint numUnloadSites) : bRun(fal
 
 MiningOperation::~MiningOperation() {
     this->stop();
+    // Even though future destructors will wait for pending async jobs,
+    // it's better to explicitly wait & clean up here
+    for (auto&& [truckId, status] : ongoingMiningOps) {
+        if (status.valid()) {
+            status.get(); // wait for the mining operation to complete
+        }
+    }
+    std::cout << "Mining operation cleanup done...\n";
 }
 
 void MiningOperation::start(uint speed) {
@@ -36,9 +44,21 @@ void MiningOperation::start(uint speed) {
             // It's better to check for flag at every blocking step to be as responsive as possible
             while (bRun) {
                 auto truck = truckSelector->getAvailableTruck();
-                if (bRun && truck) {
-                    uint truckId = truck->id();
-                    ongoingMiningOps[truckId] = truck->mineLoadTravel(speed);
+
+                if (truck) {
+                    auto truckId = truck->id();
+                    // Even though this probably be implicitly done a few lines below,
+                    // it's not bad to be explicit here as we would wait anyways.
+                    if (ongoingMiningOps.count(truckId) > 0) {
+                        if (ongoingMiningOps[truckId].valid()) {
+                            ongoingMiningOps[truckId].get();
+                        }
+                        ongoingMiningOps.erase(truckId);
+                    }
+
+                    if (bRun) {
+                        ongoingMiningOps[truckId] = truck->mineLoadTravel(speed);
+                    }
                 }
             }
         });
@@ -52,7 +72,9 @@ void MiningOperation::stop() {
         std::cout << "Stopping mining operation...\n";
         bRun = false;
         // unblock the operation thread if waiting on empty queue
-        truckSelector->truckAvailableNow(0);
+        if (truckSelector->noTruckAvailable()) {
+            truckSelector->truckAvailableNow(0);
+        }
         if (operationThread.joinable()) {
             operationThread.join();
         }
@@ -61,7 +83,7 @@ void MiningOperation::stop() {
         // before we wait & may be blocked for mining operation thread to finish
         unloadSiteSelector->stopSites();
 
-        std::cout << "Mining operation stopped.\n";
+        std::cout << "Mining operation stopped... Waiting for any cleanup...\n";
     }
 }
 
@@ -102,7 +124,9 @@ void UnloadSite::stop() {
     if (bRun) {
         std::cout << "Stopping Unload Site (" << siteId << ") ...\n";
         bRun = false;
-        waitingTrucks.push(0);
+        if (waitingTrucks.empty()) { //P
+            waitingTrucks.push(0);
+        }
         if (ulSiteThread.joinable()) {
             ulSiteThread.join();
         }
@@ -131,7 +155,6 @@ TruckStatus Truck::mineLoadTravel(uint speed) {
         uint miningTime = 1 + rand() / ((RAND_MAX + 1u) / MAX_MINING_TIME); 
         miningTime *= MINUTES_IN_HOUR / speed; // convert to minutes
         std::this_thread::sleep_for(std::chrono::minutes(miningTime));
-        
         // Get the unload site with the smallest queue
         if (siteSelector) {
             // This is not the best of the logic, but it's simple enough for demo
@@ -162,6 +185,18 @@ TruckStatus Truck::travelBack(uint speed) {
 /*
     TruckSelector implementation
 */
+TruckSelector::~TruckSelector() {
+    // Even though future destructors will wait for pending async jobs,
+    // it's better to explicitly wait & clean up here
+    auto statusPtr = availableTrucks.try_pop();
+    while (statusPtr) {
+        statusPtr = availableTrucks.try_pop();
+        if (statusPtr->valid()) {
+            statusPtr->get();
+        }
+    }
+}
+
 void TruckSelector::addTruck(uint truckId, UnloadSiteSelectorPtr ulSiteSelector) {
     trucks.push_back(std::make_shared<Truck>(truckId, ulSiteSelector));
     truckAvailableNow(truckId);
@@ -187,7 +222,8 @@ void TruckSelector::truckAvailable(TruckStatus&& truckStatus) {
 TruckPtr TruckSelector::getAvailableTruck() {
     TruckStatus truckStatus;
     availableTrucks.wait_and_pop(truckStatus);
-    uint truckId = truckStatus.get();
+    uint truckId = 0;
+    truckId = truckStatus.get();
     return truckId < trucks.size() ? trucks[truckId] : nullptr;
 }
 
